@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spotify 播放测试</title>
+
+<style>
+*{box-sizing:border-box}
+
+html,body{
+  margin:0;
+  min-height:100%;
+  background:#111;
+  color:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,
+  "Segoe UI","PingFang SC",sans-serif;
+}
+
+body{
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  padding:30px 20px;
+}
+
+.card{
+  width:min(460px,100%);
+  margin:auto;
+  padding:26px 22px;
+  border-radius:28px;
+  background:#1c1c1c;
+}
+
+h1{
+  margin:0 0 8px;
+  font-size:28px;
+}
+
+.tip{
+  color:#aaa;
+  line-height:1.6;
+  margin-bottom:20px;
+}
+
+.status{
+  padding:14px 16px;
+  margin-bottom:18px;
+  border-radius:18px;
+  background:#272727;
+  color:#ccc;
+  line-height:1.6;
+  word-break:break-word;
+}
+
+input{
+  width:100%;
+  height:48px;
+  border:0;
+  outline:0;
+  border-radius:16px;
+  padding:0 16px;
+  background:#292929;
+  color:#fff;
+  font-size:15px;
+  margin-bottom:12px;
+}
+
+button{
+  width:100%;
+  min-height:48px;
+  border:0;
+  border-radius:24px;
+  font-size:16px;
+  font-weight:700;
+  margin-bottom:12px;
+}
+
+.green{
+  background:#1ed760;
+  color:#000;
+}
+
+.dark{
+  background:#333;
+  color:#fff;
+}
+
+.small{
+  color:#888;
+  font-size:13px;
+  line-height:1.6;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+  <h1>Spotify Playback</h1>
+
+  <div class="tip">
+    测试 Web Playback SDK 是否可以把这个网页变成 Spotify 播放设备。
+  </div>
+
+  <div class="status" id="status">
+    正在加载 Spotify SDK…
+  </div>
+
+  <button class="green" id="activateBtn" disabled>
+    激活 Spotify 播放器
+  </button>
+
+  <input
+    id="trackInput"
+    placeholder="粘贴 Spotify 歌曲链接或 spotify:track:..."
+  >
+
+  <button class="green" id="playBtn" disabled>
+    播放这首歌
+  </button>
+
+  <button class="dark" id="toggleBtn" disabled>
+    播放 / 暂停
+  </button>
+
+  <button class="dark" id="prevBtn" disabled>
+    上一首
+  </button>
+
+  <button class="dark" id="nextBtn" disabled>
+    下一首
+  </button>
+
+  <div class="small">
+    如果出现 Premium / account error，说明登录链正常，但当前 Spotify
+    账号不满足 Web Playback SDK 的播放条件。
+  </div>
+
+</div>
+
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+
+<script>
+(() => {
+
+  const $ = s => document.querySelector(s);
+
+  const status = $('#status');
+
+  let player = null;
+  let deviceId = null;
+
+  function token(){
+    return localStorage.getItem(
+      'spotify_access_token'
+    );
+  }
+
+  function expired(){
+    const at = Number(
+      localStorage.getItem(
+        'spotify_expires_at'
+      ) || 0
+    );
+
+    return at && Date.now() >= at;
+  }
+
+  function setStatus(text){
+    status.textContent = text;
+  }
+
+  function enableControls(){
+    $('#activateBtn').disabled = false;
+    $('#playBtn').disabled = false;
+    $('#toggleBtn').disabled = false;
+    $('#prevBtn').disabled = false;
+    $('#nextBtn').disabled = false;
+  }
+
+  async function spotifyApi(
+    path,
+    options={}
+  ){
+
+    const response = await fetch(
+      'https://api.spotify.com/v1' + path,
+      {
+        ...options,
+
+        headers:{
+          Authorization:
+            'Bearer ' + token(),
+
+          ...(options.body
+            ? {'Content-Type':'application/json'}
+            : {}),
+
+          ...(options.headers || {})
+        }
+      }
+    );
+
+    if(response.status === 204){
+      return null;
+    }
+
+    let data = null;
+
+    try{
+      data = await response.json();
+    }catch(_){}
+
+    if(!response.ok){
+
+      throw new Error(
+        data?.error?.message ||
+        'Spotify HTTP ' +
+        response.status
+      );
+
+    }
+
+    return data;
+  }
+
+  function parseTrack(value){
+
+    value = String(value || '').trim();
+
+    if(!value){
+      return null;
+    }
+
+    if(
+      value.startsWith(
+        'spotify:track:'
+      )
+    ){
+      return value;
+    }
+
+    try{
+
+      const url =
+        new URL(value);
+
+      const match =
+        url.pathname.match(
+          /\/track\/([A-Za-z0-9]+)/
+        );
+
+      if(match){
+        return 'spotify:track:' +
+          match[1];
+      }
+
+    }catch(_){}
+
+    /*
+      也允许直接粘贴 Track ID
+    */
+    if(
+      /^[A-Za-z0-9]{10,}$/.test(value)
+    ){
+      return 'spotify:track:' +
+        value;
+    }
+
+    return null;
+  }
+
+  async function activate(){
+
+    if(!player || !deviceId){
+      throw new Error(
+        'Spotify 播放设备还没准备好'
+      );
+    }
+
+    /*
+      移动浏览器非常重要：
+      必须由用户点击触发
+    */
+    await player.activateElement();
+
+    /*
+      把 Spotify 播放设备切换到当前网页。
+      先不强制自动播放。
+    */
+    await spotifyApi(
+      '/me/player',
+      {
+        method:'PUT',
+        body:JSON.stringify({
+          device_ids:[
+            deviceId
+          ],
+          play:false
+        })
+      }
+    );
+
+    setStatus(
+      '✅ 播放器已激活\n设备 ID：' +
+      deviceId
+    );
+  }
+
+  async function playInputTrack(){
+
+    const uri =
+      parseTrack(
+        $('#trackInput').value
+      );
+
+    if(!uri){
+      throw new Error(
+        '请粘贴正确的 Spotify 歌曲链接或 URI'
+      );
+    }
+
+    /*
+      再次从用户点击事件激活，
+      对手机浏览器更稳。
+    */
+    await player.activateElement();
+
+    await spotifyApi(
+      '/me/player',
+      {
+        method:'PUT',
+        body:JSON.stringify({
+          device_ids:[
+            deviceId
+          ],
+          play:false
+        })
+      }
+    );
+
+    await spotifyApi(
+      '/me/player/play?device_id=' +
+      encodeURIComponent(deviceId),
+      {
+        method:'PUT',
+        body:JSON.stringify({
+          uris:[uri]
+        })
+      }
+    );
+
+    setStatus(
+      '▶️ 已发送播放命令\n' +
+      uri
+    );
+  }
+
+  window.onSpotifyWebPlaybackSDKReady =
+    () => {
+
+      if(!token()){
+
+        setStatus(
+          '❌ 没找到 Spotify Token，请先回 spotify-test.html 登录'
+        );
+
+        return;
+      }
+
+      if(expired()){
+
+        setStatus(
+          '❌ Spotify Token 已过期，请先重新登录'
+        );
+
+        return;
+      }
+
+      setStatus(
+        'Spotify SDK 已加载，正在连接…'
+      );
+
+      player =
+        new Spotify.Player({
+
+          name:
+            'Apple Music can',
+
+          getOAuthToken: cb => {
+            cb(token());
+          },
+
+          volume:0.6,
+
+          enableMediaSession:true
+
+        });
+
+
+      player.addListener(
+        'ready',
+        ({device_id}) => {
+
+          deviceId =
+            device_id;
+
+          setStatus(
+            '✅ Spotify 播放设备准备完成\n设备 ID：' +
+            deviceId +
+            '\n\n现在点击「激活 Spotify 播放器」'
+          );
+
+          enableControls();
+
+        }
+      );
+
+
+      player.addListener(
+        'not_ready',
+        ({device_id}) => {
+
+          setStatus(
+            '⚠️ Spotify 设备离线：' +
+            device_id
+          );
+
+        }
+      );
+
+
+      player.addListener(
+        'initialization_error',
+        ({message}) => {
+
+          setStatus(
+            '❌ 初始化失败：' +
+            message
+          );
+
+        }
+      );
+
+
+      player.addListener(
+        'authentication_error',
+        ({message}) => {
+
+          setStatus(
+            '❌ Spotify 登录凭证错误：' +
+            message
+          );
+
+        }
+      );
+
+
+      player.addListener(
+        'account_error',
+        ({message}) => {
+
+          setStatus(
+            '❌ Spotify 账号播放权限错误：' +
+            message
+          );
+
+        }
+      );
+
+
+      player.addListener(
+        'playback_error',
+        ({message}) => {
+
+          setStatus(
+            '❌ Spotify 播放错误：' +
+            message
+          );
+
+        }
+      );
+
+
+      player.addListener(
+        'player_state_changed',
+        state => {
+
+          if(!state){
+            return;
+          }
+
+          const track =
+            state.track_window
+              ?.current_track;
+
+          if(track){
+
+            setStatus(
+              (state.paused
+                ? '⏸️ '
+                : '▶️ ') +
+
+              track.name +
+
+              '\n' +
+
+              (
+                track.artists
+                ?.map(x=>x.name)
+                .join(' / ')
+                || ''
+              )
+            );
+
+          }
+
+        }
+      );
+
+
+      player.connect()
+        .then(success => {
+
+          if(!success){
+
+            setStatus(
+              '❌ Spotify SDK 连接失败'
+            );
+
+          }
+
+        });
+
+    };
+
+
+  $('#activateBtn').onclick =
+    async () => {
+
+      try{
+        await activate();
+      }catch(e){
+        setStatus(
+          '❌ ' + e.message
+        );
+      }
+
+    };
+
+
+  $('#playBtn').onclick =
+    async () => {
+
+      try{
+        await playInputTrack();
+      }catch(e){
+        setStatus(
+          '❌ ' + e.message
+        );
+      }
+
+    };
+
+
+  $('#toggleBtn').onclick =
+    async () => {
+
+      try{
+
+        await player.activateElement();
+        await player.togglePlay();
+
+      }catch(e){
+
+        setStatus(
+          '❌ ' + e.message
+        );
+
+      }
+
+    };
+
+
+  $('#prevBtn').onclick =
+    async () => {
+
+      try{
+        await player.previousTrack();
+      }catch(e){
+        setStatus(
+          '❌ ' + e.message
+        );
+      }
+
+    };
+
+
+  $('#nextBtn').onclick =
+    async () => {
+
+      try{
+        await player.nextTrack();
+      }catch(e){
+        setStatus(
+          '❌ ' + e.message
+        );
+      }
+
+    };
+
+})();
+</script
