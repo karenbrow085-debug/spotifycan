@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Spotify 歌单测试</title>
+
+<style>
+*{
+  box-sizing:border-box;
+}
+
+html,body{
+  margin:0;
+  min-height:100%;
+  background:#111;
+  color:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,
+  "Segoe UI","PingFang SC",sans-serif;
+}
+
+body{
+  padding:24px;
+}
+
+.wrap{
+  width:min(520px,100%);
+  margin:40px auto;
+}
+
+h1{
+  margin:0 0 8px;
+  font-size:28px;
+}
+
+.tip{
+  color:#aaa;
+  margin-bottom:22px;
+}
+
+button{
+  width:100%;
+  min-height:48px;
+  border:0;
+  border-radius:24px;
+  background:#1ed760;
+  color:#000;
+  font-size:16px;
+  font-weight:700;
+  margin-bottom:18px;
+}
+
+.status{
+  color:#aaa;
+  margin-bottom:16px;
+}
+
+.playlist{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:12px 0;
+  border-bottom:1px solid #292929;
+}
+
+.cover{
+  width:58px;
+  height:58px;
+  flex:0 0 58px;
+  border-radius:8px;
+  background:#292929;
+  object-fit:cover;
+}
+
+.info{
+  min-width:0;
+}
+
+.name{
+  font-size:16px;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.meta{
+  margin-top:5px;
+  color:#999;
+  font-size:13px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <h1>Spotify 歌单</h1>
+
+  <div class="tip">
+    测试读取当前 Spotify 账号的歌单
+  </div>
+
+  <button id="loadBtn">
+    读取我的 Spotify 歌单
+  </button>
+
+  <div class="status" id="status">
+    等待读取
+  </div>
+
+  <div id="list"></div>
+
+</div>
+
+<script>
+(() => {
+
+  const token =
+    localStorage.getItem('spotify_access_token');
+
+  const expiresAt =
+    Number(
+      localStorage.getItem('spotify_expires_at') || 0
+    );
+
+  const status =
+    document.getElementById('status');
+
+  const list =
+    document.getElementById('list');
+
+  const btn =
+    document.getElementById('loadBtn');
+
+
+  function esc(value){
+    return String(value ?? '')
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+
+  async function spotifyFetch(url){
+
+    const response = await fetch(url,{
+      headers:{
+        Authorization:'Bearer ' + token
+      }
+    });
+
+    const data = await response.json();
+
+    if(!response.ok){
+      throw new Error(
+        data?.error?.message ||
+        'Spotify 请求失败：HTTP ' +
+        response.status
+      );
+    }
+
+    return data;
+  }
+
+
+  async function loadPlaylists(){
+
+    list.innerHTML = '';
+
+    if(!token){
+
+      status.textContent =
+        '❌ 没有找到 Spotify 登录 Token，请先回 spotify-test.html 登录';
+
+      return;
+    }
+
+    if(expiresAt && Date.now() >= expiresAt){
+
+      status.textContent =
+        '❌ Access Token 已过期，请先重新登录 Spotify';
+
+      return;
+    }
+
+    status.textContent =
+      '正在读取 Spotify 歌单…';
+
+    try{
+
+      let url =
+        'https://api.spotify.com/v1/me/playlists?limit=50';
+
+      let playlists = [];
+
+      while(url){
+
+        const data =
+          await spotifyFetch(url);
+
+        playlists.push(
+          ...(Array.isArray(data.items)
+            ? data.items
+            : [])
+        );
+
+        url = data.next || null;
+
+        /*
+          防止异常情况下无限翻页
+        */
+        if(playlists.length >= 500){
+          break;
+        }
+      }
+
+
+      status.textContent =
+        '✅ 共读取到 ' +
+        playlists.length +
+        ' 个歌单';
+
+
+      if(!playlists.length){
+
+        list.innerHTML =
+          '<div class="status">当前账号没有读取到歌单</div>';
+
+        return;
+      }
+
+
+      list.innerHTML =
+        playlists.map(p => {
+
+          const image =
+            p.images?.[0]?.url || '';
+
+          /*
+            Spotify 新接口优先使用 items.total，
+            tracks.total 为兼容旧结构
+          */
+          const count =
+            p.items?.total ??
+            p.tracks?.total ??
+            0;
+
+          return `
+            <div class="playlist">
+
+              ${
+                image
+                  ? `<img
+                       class="cover"
+                       src="${esc(image)}"
+                       alt=""
+                     >`
+                  : `<div class="cover"></div>`
+              }
+
+              <div class="info">
+
+                <div class="name">
+                  ${esc(p.name || '未命名歌单')}
+                </div>
+
+                <div class="meta">
+                  ${Number(count)} 首
+                  ·
+                  ${p.public === false ? '私人歌单' : '歌单'}
+                </div>
+
+              </div>
+
+            </div>
+          `;
+
+        }).join('');
+
+    }catch(error){
+
+      status.textContent =
+        '❌ ' + error.message;
+
+    }
+
+  }
+
+
+  btn.onclick =
+    loadPlaylists;
+
+})();
+</script>
+
+</body>
+</html>
