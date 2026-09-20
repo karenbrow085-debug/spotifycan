@@ -1,110 +1,74 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <title>Spotify 登录</title>
-
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
-      margin: 0;
-      width: 100%;
-      min-height: 100%;
-      background: #111;
-      color: #fff;
-      font-family: -apple-system, BlinkMacSystemFont,
-        "Segoe UI", "PingFang SC", sans-serif;
-    }
-
-    body {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 28px;
-    }
-
-    .card {
-      width: min(420px, 100%);
-      padding: 30px 24px;
-      border-radius: 28px;
-      background: #1b1b1b;
-      text-align: center;
-    }
-
-    h1 {
-      margin: 0 0 16px;
-      font-size: 24px;
-    }
-
-    p {
-      margin: 0;
-      color: #b7b7b7;
-      line-height: 1.6;
-      font-size: 15px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Spotify 登录</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#111;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card{width:min(430px,100%);padding:28px 22px;border-radius:28px;background:#1c1c1c}.title{font-size:28px;font-weight:700;margin:0 0 10px}.text{color:#aaa;line-height:1.7;font-size:15px;white-space:pre-wrap}.btn{display:block;width:100%;min-height:48px;border:0;border-radius:24px;margin-top:14px;font-size:16px;font-weight:700;background:#1ed760;color:#000}.btn.secondary{background:#333;color:#fff}.small{font-size:13px;color:#777;line-height:1.6;margin-top:16px}
+</style>
 </head>
-
 <body>
-  <div class="card">
-    <h1>Spotify</h1>
-    <p id="message">正在处理 Spotify 登录…</p>
-  </div>
+<div class="card">
+  <div class="title">Spotify</div>
+  <div class="text" id="message">正在处理 Spotify 授权…</div>
+  <button class="btn" id="returnBtn" type="button">返回状态栏</button>
+  <button class="btn secondary" id="copyBtn" type="button">复制授权结果</button>
+  <div class="small">如果返回状态栏后仍显示“未登录”，点“复制授权结果”，再回状态栏粘贴并点“确认登录”。</div>
+</div>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const payload = {
+    type: 'spotify-oauth-callback',
+    code: params.get('code'),
+    error: params.get('error'),
+    state: params.get('state')
+  };
+  const message = document.getElementById('message');
+  const returnBtn = document.getElementById('returnBtn');
+  const copyBtn = document.getElementById('copyBtn');
 
-  <script>
-    (() => {
-      const params = new URLSearchParams(location.search);
-
-      const code = params.get("code");
-      const error = params.get("error");
-      const state = params.get("state");
-
-      const message = document.getElementById("message");
-
-      const payload = {
-        type: "spotify-oauth-callback",
-        code,
-        error,
-        state
-      };
-
-      if (window.opener) {
-        window.opener.postMessage(payload, "*");
-
-        if (error) {
-          message.textContent =
-            "Spotify 授权没有完成，可以返回状态栏重新登录。";
-        } else if (code) {
-          message.textContent =
-            "Spotify 授权成功，正在返回状态栏…";
-
-          setTimeout(() => {
-            window.close();
-          }, 900);
-        } else {
-          message.textContent =
-            "没有收到 Spotify 授权结果。";
-        }
-      } else {
-        if (error) {
-          message.textContent =
-            "Spotify 授权没有完成，请返回原来的状态栏。";
-        } else if (code) {
-          message.textContent =
-            "Spotify 授权已经完成，请返回原来的状态栏。";
-        } else {
-          message.textContent =
-            "没有收到 Spotify 授权结果。";
-        }
+  function sendBack() {
+    let sent = false;
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(payload, '*');
+        sent = true;
       }
-    })();
-  </script>
+    } catch (_) {}
+    return sent;
+  }
+
+  async function copyResult() {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      message.textContent = '已复制授权结果。\n现在返回状态栏，粘贴到 Spotify 登录框并点“确认登录”。';
+    } catch (_) {
+      message.textContent = '浏览器不允许自动复制。\n请长按地址栏复制当前完整网址，然后返回状态栏粘贴确认。';
+    }
+  }
+
+  if (payload.error) {
+    message.textContent = 'Spotify 授权未完成：' + payload.error;
+  } else if (payload.code && payload.state) {
+    const sent = sendBack();
+    message.textContent = sent
+      ? 'Spotify 授权成功，已尝试把登录结果发送回状态栏。\n如果状态栏仍未登录，请点下面“复制授权结果”。'
+      : 'Spotify 授权成功。\n当前浏览器没有把登录结果自动传回状态栏，请点“复制授权结果”。';
+  } else {
+    message.textContent = '没有收到 Spotify 授权结果。请返回状态栏重新登录。';
+  }
+
+  returnBtn.onclick = () => {
+    sendBack();
+    try { window.close(); } catch (_) {}
+    message.textContent = '已再次发送登录结果。请返回状态栏查看。';
+  };
+
+  copyBtn.onclick = copyResult;
+})();
+</script>
 </body>
 </html>
