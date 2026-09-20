@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Spotify 登录</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      background: #111;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "PingFang SC", sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+    }
+
+    .card {
+      width: min(420px, 100%);
+      padding: 30px 24px;
+      border-radius: 28px;
+      background: #1b1b1b;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 24px;
+    }
+
+    p {
+      margin: 0;
+      color: #b7b7b7;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>Spotify</h1>
+    <p id="message">正在处理 Spotify 登录…</p>
+  </div>
+
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+
+      const code = params.get("code");
+      const error = params.get("error");
+      const state = params.get("state");
+
+      const message = document.getElementById("message");
+
+      const payload = {
+        type: "spotify-oauth-callback",
+        code,
+        error,
+        state
+      };
+
+      if (window.opener) {
+        window.opener.postMessage(payload, "*");
+
+        if (error) {
+          message.textContent =
+            "Spotify 授权没有完成，可以返回状态栏重新登录。";
+        } else if (code) {
+          message.textContent =
+            "Spotify 授权成功，正在返回状态栏…";
+
+          setTimeout(() => {
+            window.close();
+          }, 900);
+        } else {
+          message.textContent =
+            "没有收到 Spotify 授权结果。";
+        }
+      } else {
+        if (error) {
+          message.textContent =
+            "Spotify 授权没有完成，请返回原来的状态栏。";
+        } else if (code) {
+          message.textContent =
+            "Spotify 授权已经完成，请返回原来的状态栏。";
+        } else {
+          message.textContent =
+            "没有收到 Spotify 授权结果。";
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
