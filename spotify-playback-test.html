@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Spotify 播放测试</title>
+<title>Spotify Playback Test</title>
 
 <style>
 *{box-sizing:border-box}
@@ -49,7 +49,8 @@ h1{
   border-radius:18px;
   background:#272727;
   color:#ccc;
-  line-height:1.6;
+  line-height:1.7;
+  white-space:pre-wrap;
   word-break:break-word;
 }
 
@@ -74,6 +75,10 @@ button{
   font-size:16px;
   font-weight:700;
   margin-bottom:12px;
+}
+
+button:disabled{
+  opacity:.4;
 }
 
 .green{
@@ -101,11 +106,11 @@ button{
   <h1>Spotify Playback</h1>
 
   <div class="tip">
-    测试 Web Playback SDK 是否可以把这个网页变成 Spotify 播放设备。
+    测试 Spotify Web Playback SDK
   </div>
 
   <div class="status" id="status">
-    正在加载 Spotify SDK…
+    页面已启动，准备加载 Spotify SDK…
   </div>
 
   <button class="green" id="activateBtn" disabled>
@@ -114,7 +119,7 @@ button{
 
   <input
     id="trackInput"
-    placeholder="粘贴 Spotify 歌曲链接或 spotify:track:..."
+    placeholder="粘贴 Spotify 歌曲链接"
   >
 
   <button class="green" id="playBtn" disabled>
@@ -134,13 +139,10 @@ button{
   </button>
 
   <div class="small">
-    如果出现 Premium / account error，说明登录链正常，但当前 Spotify
-    账号不满足 Web Playback SDK 的播放条件。
+    这个页面会显示 Spotify SDK 实际卡在哪一步。
   </div>
 
 </div>
-
-<script src="https://sdk.scdn.co/spotify-player.js"></script>
 
 <script>
 (() => {
@@ -152,33 +154,47 @@ button{
   let player = null;
   let deviceId = null;
 
+  let sdkReadyCalled = false;
+  let playerStarted = false;
+
+
+  function setStatus(text){
+    status.textContent = text;
+  }
+
+
   function token(){
     return localStorage.getItem(
       'spotify_access_token'
     );
   }
 
+
   function expired(){
+
     const at = Number(
       localStorage.getItem(
         'spotify_expires_at'
       ) || 0
     );
 
-    return at && Date.now() >= at;
+    return !!(
+      at &&
+      Date.now() >= at
+    );
   }
 
-  function setStatus(text){
-    status.textContent = text;
-  }
 
   function enableControls(){
+
     $('#activateBtn').disabled = false;
     $('#playBtn').disabled = false;
     $('#toggleBtn').disabled = false;
     $('#prevBtn').disabled = false;
     $('#nextBtn').disabled = false;
+
   }
+
 
   async function spotifyApi(
     path,
@@ -195,7 +211,10 @@ button{
             'Bearer ' + token(),
 
           ...(options.body
-            ? {'Content-Type':'application/json'}
+            ? {
+                'Content-Type':
+                'application/json'
+              }
             : {}),
 
           ...(options.headers || {})
@@ -203,15 +222,18 @@ button{
       }
     );
 
+
     if(response.status === 204){
       return null;
     }
+
 
     let data = null;
 
     try{
       data = await response.json();
     }catch(_){}
+
 
     if(!response.ok){
 
@@ -223,16 +245,21 @@ button{
 
     }
 
+
     return data;
   }
 
+
   function parseTrack(value){
 
-    value = String(value || '').trim();
+    value =
+      String(value || '').trim();
+
 
     if(!value){
       return null;
     }
+
 
     if(
       value.startsWith(
@@ -241,6 +268,7 @@ button{
     ){
       return value;
     }
+
 
     try{
 
@@ -253,135 +281,78 @@ button{
         );
 
       if(match){
-        return 'spotify:track:' +
-          match[1];
+
+        return (
+          'spotify:track:' +
+          match[1]
+        );
+
       }
 
     }catch(_){}
 
-    /*
-      也允许直接粘贴 Track ID
-    */
+
     if(
       /^[A-Za-z0-9]{10,}$/.test(value)
     ){
-      return 'spotify:track:' +
-        value;
+
+      return (
+        'spotify:track:' +
+        value
+      );
+
     }
+
 
     return null;
   }
 
-  async function activate(){
 
-    if(!player || !deviceId){
-      throw new Error(
-        'Spotify 播放设备还没准备好'
-      );
+  async function startPlayer(){
+
+    if(playerStarted){
+      return;
     }
 
-    /*
-      移动浏览器非常重要：
-      必须由用户点击触发
-    */
-    await player.activateElement();
+    playerStarted = true;
 
-    /*
-      把 Spotify 播放设备切换到当前网页。
-      先不强制自动播放。
-    */
-    await spotifyApi(
-      '/me/player',
-      {
-        method:'PUT',
-        body:JSON.stringify({
-          device_ids:[
-            deviceId
-          ],
-          play:false
-        })
-      }
-    );
 
-    setStatus(
-      '✅ 播放器已激活\n设备 ID：' +
-      deviceId
-    );
-  }
-
-  async function playInputTrack(){
-
-    const uri =
-      parseTrack(
-        $('#trackInput').value
-      );
-
-    if(!uri){
-      throw new Error(
-        '请粘贴正确的 Spotify 歌曲链接或 URI'
-      );
-    }
-
-    /*
-      再次从用户点击事件激活，
-      对手机浏览器更稳。
-    */
-    await player.activateElement();
-
-    await spotifyApi(
-      '/me/player',
-      {
-        method:'PUT',
-        body:JSON.stringify({
-          device_ids:[
-            deviceId
-          ],
-          play:false
-        })
-      }
-    );
-
-    await spotifyApi(
-      '/me/player/play?device_id=' +
-      encodeURIComponent(deviceId),
-      {
-        method:'PUT',
-        body:JSON.stringify({
-          uris:[uri]
-        })
-      }
-    );
-
-    setStatus(
-      '▶️ 已发送播放命令\n' +
-      uri
-    );
-  }
-
-  window.onSpotifyWebPlaybackSDKReady =
-    () => {
-
-      if(!token()){
-
-        setStatus(
-          '❌ 没找到 Spotify Token，请先回 spotify-test.html 登录'
-        );
-
-        return;
-      }
-
-      if(expired()){
-
-        setStatus(
-          '❌ Spotify Token 已过期，请先重新登录'
-        );
-
-        return;
-      }
+    if(!window.Spotify?.Player){
 
       setStatus(
-        'Spotify SDK 已加载，正在连接…'
+        '❌ SDK 回调已经执行，但 Spotify.Player 不存在'
       );
+
+      return;
+    }
+
+
+    if(!token()){
+
+      setStatus(
+        '❌ 没有 Spotify Token\n请先回 spotify-test.html 登录'
+      );
+
+      return;
+    }
+
+
+    if(expired()){
+
+      setStatus(
+        '❌ Spotify Token 已经过期\n请重新登录'
+      );
+
+      return;
+    }
+
+
+    setStatus(
+      '✅ Spotify SDK 已初始化\n正在创建播放器…'
+    );
+
+
+    try{
 
       player =
         new Spotify.Player({
@@ -389,9 +360,18 @@ button{
           name:
             'Apple Music can',
 
-          getOAuthToken: cb => {
-            cb(token());
-          },
+          getOAuthToken:
+            cb => {
+
+              const t = token();
+
+              setStatus(
+                'Spotify 正在请求登录 Token…'
+              );
+
+              cb(t);
+
+            },
 
           volume:0.6,
 
@@ -408,7 +388,8 @@ button{
             device_id;
 
           setStatus(
-            '✅ Spotify 播放设备准备完成\n设备 ID：' +
+            '✅ Spotify 播放设备准备完成！\n\n' +
+            'Device ID：\n' +
             deviceId +
             '\n\n现在点击「激活 Spotify 播放器」'
           );
@@ -424,7 +405,7 @@ button{
         ({device_id}) => {
 
           setStatus(
-            '⚠️ Spotify 设备离线：' +
+            '⚠️ Spotify 设备离线\n' +
             device_id
           );
 
@@ -437,7 +418,7 @@ button{
         ({message}) => {
 
           setStatus(
-            '❌ 初始化失败：' +
+            '❌ initialization_error\n' +
             message
           );
 
@@ -450,8 +431,9 @@ button{
         ({message}) => {
 
           setStatus(
-            '❌ Spotify 登录凭证错误：' +
-            message
+            '❌ authentication_error\n' +
+            message +
+            '\n\n请重新登录 Spotify'
           );
 
         }
@@ -463,8 +445,9 @@ button{
         ({message}) => {
 
           setStatus(
-            '❌ Spotify 账号播放权限错误：' +
-            message
+            '❌ account_error\n' +
+            message +
+            '\n\n通常表示当前账号不满足 Web Playback SDK 播放条件'
           );
 
         }
@@ -476,7 +459,7 @@ button{
         ({message}) => {
 
           setStatus(
-            '❌ Spotify 播放错误：' +
+            '❌ playback_error\n' +
             message
           );
 
@@ -492,16 +475,20 @@ button{
             return;
           }
 
+
           const track =
             state.track_window
               ?.current_track;
 
+
           if(track){
 
             setStatus(
-              (state.paused
-                ? '⏸️ '
-                : '▶️ ') +
+              (
+                state.paused
+                  ? '⏸️ '
+                  : '▶️ '
+              ) +
 
               track.name +
 
@@ -521,31 +508,257 @@ button{
       );
 
 
-      player.connect()
-        .then(success => {
+      setStatus(
+        '播放器对象已创建\n正在执行 player.connect()…'
+      );
 
-          if(!success){
 
-            setStatus(
-              '❌ Spotify SDK 连接失败'
-            );
+      const connected =
+        await player.connect();
 
-          }
 
-        });
+      if(connected){
+
+        setStatus(
+          '✅ player.connect() 成功\n正在等待 Spotify 返回 Device ID…'
+        );
+
+      }else{
+
+        setStatus(
+          '❌ player.connect() 返回 false'
+        );
+
+      }
+
+
+    }catch(error){
+
+      setStatus(
+        '❌ 创建播放器异常\n' +
+        error.message
+      );
+
+    }
+
+  }
+
+
+  /*
+    关键：
+    在加载 Spotify SDK 之前，
+    先注册 Ready 回调。
+  */
+
+  window.onSpotifyWebPlaybackSDKReady =
+    () => {
+
+      sdkReadyCalled = true;
+
+      setStatus(
+        '✅ onSpotifyWebPlaybackSDKReady 已触发\n正在初始化播放器…'
+      );
+
+      startPlayer();
 
     };
+
+
+  /*
+    现在才加载 SDK
+  */
+
+  const script =
+    document.createElement('script');
+
+  script.src =
+    'https://sdk.scdn.co/spotify-player.js';
+
+  script.async = true;
+
+
+  script.onload =
+    () => {
+
+      if(
+        !sdkReadyCalled &&
+        window.Spotify?.Player
+      ){
+
+        setStatus(
+          '✅ SDK 文件加载成功\n检测到 Spotify.Player\n正在手动初始化…'
+        );
+
+        startPlayer();
+
+      }else if(
+        !sdkReadyCalled
+      ){
+
+        setStatus(
+          'SDK 文件已经下载\n等待 Spotify SDK Ready 回调…'
+        );
+
+      }
+
+    };
+
+
+  script.onerror =
+    () => {
+
+      setStatus(
+        '❌ spotify-player.js 加载失败'
+      );
+
+    };
+
+
+  document.head.appendChild(
+    script
+  );
+
+
+  setTimeout(
+    () => {
+
+      if(!playerStarted){
+
+        setStatus(
+          '❌ 等待 10 秒仍未初始化\n\n' +
+          'SDK文件：' +
+          (
+            window.Spotify
+              ? '已存在'
+              : '不存在'
+          ) +
+          '\nReady回调：' +
+          (
+            sdkReadyCalled
+              ? '已触发'
+              : '未触发'
+          )
+        );
+
+      }
+
+    },
+    10000
+  );
+
+
+  async function activate(){
+
+    if(
+      !player ||
+      !deviceId
+    ){
+
+      throw new Error(
+        'Spotify 设备还没有准备完成'
+      );
+
+    }
+
+
+    await player.activateElement();
+
+
+    await spotifyApi(
+      '/me/player',
+      {
+        method:'PUT',
+
+        body:JSON.stringify({
+          device_ids:[
+            deviceId
+          ],
+
+          play:false
+        })
+      }
+    );
+
+
+    setStatus(
+      '✅ Spotify 播放器已激活'
+    );
+
+  }
+
+
+  async function playInputTrack(){
+
+    const uri =
+      parseTrack(
+        $('#trackInput').value
+      );
+
+
+    if(!uri){
+
+      throw new Error(
+        'Spotify 歌曲链接不正确'
+      );
+
+    }
+
+
+    await player.activateElement();
+
+
+    await spotifyApi(
+      '/me/player',
+      {
+        method:'PUT',
+
+        body:JSON.stringify({
+          device_ids:[
+            deviceId
+          ],
+
+          play:false
+        })
+      }
+    );
+
+
+    await spotifyApi(
+      '/me/player/play?device_id=' +
+      encodeURIComponent(
+        deviceId
+      ),
+      {
+        method:'PUT',
+
+        body:JSON.stringify({
+          uris:[uri]
+        })
+      }
+    );
+
+
+    setStatus(
+      '▶️ 播放命令已发送\n' +
+      uri
+    );
+
+  }
 
 
   $('#activateBtn').onclick =
     async () => {
 
       try{
+
         await activate();
+
       }catch(e){
+
         setStatus(
           '❌ ' + e.message
         );
+
       }
 
     };
@@ -555,11 +768,15 @@ button{
     async () => {
 
       try{
+
         await playInputTrack();
+
       }catch(e){
+
         setStatus(
           '❌ ' + e.message
         );
+
       }
 
     };
@@ -588,11 +805,15 @@ button{
     async () => {
 
       try{
+
         await player.previousTrack();
+
       }catch(e){
+
         setStatus(
           '❌ ' + e.message
         );
+
       }
 
     };
@@ -602,14 +823,21 @@ button{
     async () => {
 
       try{
+
         await player.nextTrack();
+
       }catch(e){
+
         setStatus(
           '❌ ' + e.message
         );
+
       }
 
     };
 
 })();
-</script
+</script>
+
+</body>
+</html>
